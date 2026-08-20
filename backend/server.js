@@ -33,6 +33,7 @@ app.use('/api/attendance', require('./routes/attendance'));
 app.use('/api/tasks', require('./routes/tasks'));
 app.use('/api/leaves', require('./routes/leaves'));
 app.use('/api/misc', require('./routes/misc'));
+app.use('/api/chat', require('./routes/chat'));
 
 // Setup Real-time WebSockets Server
 const io = new Server(server, {
@@ -53,10 +54,28 @@ io.on('connection', (socket) => {
   });
 
   // Listen for team messages and broadcast to matching room
-  socket.on('sendMessage', (msg) => {
+  socket.on('sendMessage', async (msg) => {
     console.log(`Message received for room ${msg.room}:`, msg);
-    // msg structure: { room: 'engineering', sender: 'Alex Carter', text: '...', timestamp: '...' }
-    io.to(msg.room).emit('message', msg);
+    try {
+      const db = dbo.getDb();
+      const messageDoc = {
+        room: msg.room || 'general',
+        senderName: msg.senderName,
+        text: msg.text || '',
+        time: msg.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        file: msg.file || null,
+        timestamp: new Date().toISOString()
+      };
+      
+      const result = await db.collection('messages').insertOne(messageDoc);
+      messageDoc.id = result.insertedId.toString();
+      messageDoc._id = result.insertedId;
+      
+      // Broadcast to everyone in the room (including sender)
+      io.to(msg.room).emit('message', messageDoc);
+    } catch (err) {
+      console.error("Failed to save and broadcast message:", err);
+    }
   });
 
   socket.on('disconnect', () => {

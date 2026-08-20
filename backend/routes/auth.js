@@ -14,17 +14,20 @@ router.post('/login', async (req, res) => {
     return res.status(400).json({ message: "Please provide email and password" });
   }
 
+  const trimmedEmail = email.trim();
+  const trimmedPassword = password.trim();
+
   try {
     const db = getDb();
     
     // Find user in users collection
-    const user = await db.collection('users').findOne({ email: email.toLowerCase() });
+    const user = await db.collection('users').findOne({ email: trimmedEmail.toLowerCase() });
     if (!user) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
     // Verify password hash
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await bcrypt.compare(trimmedPassword, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid email or password" });
     }

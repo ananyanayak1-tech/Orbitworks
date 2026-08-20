@@ -88,14 +88,14 @@ const KanbanBoard = ({ tasks = [], onTaskClick, onTaskStatusChange }) => {
             </div>
             
             <div 
-              style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', overflowY: 'auto', maxHeight: '500px', minHeight: '300px' }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', overflowY: 'auto', maxHeight: '500px', minHeight: '300px', padding: '0.25rem' }}
             >
               {colTasks.map((task) => (
                 <div 
-                  key={task.id}
+                  key={task._id || task.id}
                   draggable
                   onDragStart={(e) => {
-                    e.dataTransfer.setData('text/plain', task.id);
+                    e.dataTransfer.setData('text/plain', task._id || task.id);
                   }}
                   style={{ cursor: 'grab' }}
                 >

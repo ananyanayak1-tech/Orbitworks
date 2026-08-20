@@ -4,9 +4,22 @@ import TaskCard from '../../components/TaskCard';
 import Modal from '../../components/Modal';
 import Badge from '../../components/Badge';
 import DiscussionThread from '../../components/DiscussionThread';
-import { updateTask, addTaskComment } from '../../services/api';
+import { updateTask, addTaskComment, deleteTaskComment } from '../../services/api';
 import { List, Kanban, Calendar, User, Upload } from 'lucide-react';
 import { formatDate } from '../../utils/dateFormatter';
+
+const getTaskCode = (task) => {
+  if (!task) return '';
+  if (task.taskCode) return task.taskCode;
+  const idStr = String(task._id || task.id || '');
+  if (idStr.endsWith('9c')) return 'TSK-101';
+  if (idStr.endsWith('9d')) return 'TSK-102';
+  if (idStr.endsWith('9e')) return 'TSK-103';
+  if (idStr.length > 5) {
+    return `TSK-${idStr.slice(-5).toUpperCase()}`;
+  }
+  return 'TSK-100';
+};
 
 const MyTasks = ({ tasks, empRecord, onRefresh }) => {
   const [viewType, setViewType] = useState('kanban'); // 'list' or 'kanban'
@@ -39,7 +52,7 @@ const MyTasks = ({ tasks, empRecord, onRefresh }) => {
     }
 
     try {
-      const updated = await updateTask(selectedTask.id, updates);
+      const updated = await updateTask(selectedTask._id || selectedTask.id, updates);
       setSelectedTask(updated);
       setFileUploadName('');
       onRefresh();
@@ -50,10 +63,20 @@ const MyTasks = ({ tasks, empRecord, onRefresh }) => {
 
   const handleAddComment = async (text) => {
     try {
-      const updated = await addTaskComment(selectedTask.id, {
+      const updated = await addTaskComment(selectedTask._id || selectedTask.id, {
         senderName: empRecord.name,
         text
       });
+      setSelectedTask(updated);
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteComment = async (commentId) => {
+    try {
+      const updated = await deleteTaskComment(selectedTask._id || selectedTask.id, commentId);
       setSelectedTask(updated);
       onRefresh();
     } catch (err) {
@@ -140,7 +163,7 @@ const MyTasks = ({ tasks, empRecord, onRefresh }) => {
         {selectedTask && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', textTransform: 'lowercase' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>id: {selectedTask.id}</span>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600' }}>task id: {getTaskCode(selectedTask)}</span>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <Badge text={selectedTask.priority} />
                 <Badge text={selectedTask.status} />
@@ -167,7 +190,7 @@ const MyTasks = ({ tasks, empRecord, onRefresh }) => {
                 <strong>deadline:</strong>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem', color: 'var(--text-secondary)' }}>
                   <Calendar size={14} />
-                  <span>{formatDate(selectedTask.deadline)}</span>
+                  <span>{formatDate(selectedTask.deadline || selectedTask.dueDate)}</span>
                 </div>
               </div>
               <div>
@@ -253,7 +276,11 @@ const MyTasks = ({ tasks, empRecord, onRefresh }) => {
               </div>
             </form>
 
-            <DiscussionThread comments={selectedTask.comments} onAddComment={handleAddComment} />
+            <DiscussionThread 
+              comments={selectedTask.comments} 
+              onAddComment={handleAddComment} 
+              onDeleteComment={handleDeleteComment} 
+            />
           </div>
         )}
       </Modal>

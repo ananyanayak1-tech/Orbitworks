@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import picLogo from '../assets/pic.png';
 import { CheckCircle2, ChevronRight } from 'lucide-react';
+import { submitDemoRequest } from '../services/api';
 
 const RequestDemo = () => {
   const navigate = useNavigate();
@@ -17,6 +18,8 @@ const RequestDemo = () => {
 
   const [errors, setErrors] = useState({});
   const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   const validateForm = () => {
     const newErrors = {};
@@ -50,10 +53,20 @@ const RequestDemo = () => {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (validateForm()) {
-      setSubmitted(true);
+      setLoading(true);
+      setSubmitError('');
+      try {
+        await submitDemoRequest(formData);
+        setSubmitted(true);
+      } catch (err) {
+        console.error("Demo submission failed:", err);
+        setSubmitError(err.response?.data?.message || 'Failed to submit request. Please try again.');
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -70,8 +83,8 @@ const RequestDemo = () => {
       <style>{`
         .demo-input-field {
           width: 100%;
-          padding: 0.75rem 1rem;
-          font-size: 0.9rem;
+          padding: 0.85rem 1.1rem;
+          font-size: 1rem;
           border-radius: 8px;
           border: 1px solid #D5E1E5;
           outline: none;
@@ -98,7 +111,7 @@ const RequestDemo = () => {
           backgroundColor: #ffffff;
           color: #526579;
           cursor: pointer;
-          font-size: 0.8rem;
+          font-size: 0.85rem;
           font-weight: 600;
           font-family: 'IBM Plex Sans', sans-serif;
           transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -116,9 +129,9 @@ const RequestDemo = () => {
         }
 
         .submit-btn {
-          padding: 0.8rem;
+          padding: 0.95rem;
           width: 100%;
-          font-size: 0.95rem;
+          font-size: 1.15rem;
           font-weight: 600;
           margin-top: 0.5rem;
           display: flex;
@@ -202,13 +215,30 @@ const RequestDemo = () => {
             <>
               {/* Headline */}
               <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                <h2 style={{ fontFamily: 'Manrope, sans-serif', fontSize: '2rem', fontWeight: '900', margin: '0 0 0.5rem 0', color: '#102A43', letterSpacing: '-0.5px' }}>
+                <h2 style={{ fontFamily: 'Manrope, sans-serif', fontSize: '2.25rem', fontWeight: '900', margin: '0 0 0.5rem 0', color: '#102A43', letterSpacing: '-0.5px' }}>
                   Request a Demo
                 </h2>
-                <p style={{ color: '#526579', fontSize: '0.9rem', margin: 0 }}>
+                <p style={{ color: '#526579', fontSize: '1.05rem', margin: 0 }}>
                   Enter your details below to schedule a tailored live demo walk.
                 </p>
               </div>
+
+              {submitError && (
+                <div 
+                  style={{ 
+                    backgroundColor: '#FFF5F5', 
+                    color: '#C53030', 
+                    padding: '0.85rem', 
+                    borderRadius: '8px', 
+                    border: '1px solid #FEB2B2', 
+                    fontSize: '0.9rem',
+                    marginBottom: '1rem',
+                    fontWeight: '500'
+                  }}
+                >
+                  {submitError}
+                </div>
+              )}
 
               {/* Form */}
               <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -216,26 +246,28 @@ const RequestDemo = () => {
                 {/* Row: First Name & Last Name */}
                 <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                    <label style={{ fontSize: '0.8rem', fontWeight: '600', color: '#102A43' }}>First Name *</label>
+                    <label style={{ fontSize: '0.92rem', fontWeight: '600', color: '#102A43' }}>First Name *</label>
                     <input 
                       type="text" 
                       name="firstName"
                       placeholder=""
                       value={formData.firstName}
                       onChange={handleChange}
+                      disabled={loading}
                       className={`demo-input-field ${errors.firstName ? 'error-border' : ''}`}
                     />
                     {errors.firstName && <span className="error-message">{errors.firstName}</span>}
                   </div>
 
                   <div style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                    <label style={{ fontSize: '0.8rem', fontWeight: '600', color: '#102A43' }}>Last Name *</label>
+                    <label style={{ fontSize: '0.92rem', fontWeight: '600', color: '#102A43' }}>Last Name *</label>
                     <input 
                       type="text" 
                       name="lastName"
                       placeholder=""
                       value={formData.lastName}
                       onChange={handleChange}
+                      disabled={loading}
                       className={`demo-input-field ${errors.lastName ? 'error-border' : ''}`}
                     />
                     {errors.lastName && <span className="error-message">{errors.lastName}</span>}
@@ -244,13 +276,14 @@ const RequestDemo = () => {
 
                 {/* Field: Work Email */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  <label style={{ fontSize: '0.8rem', fontWeight: '600', color: '#102A43' }}>Work Email *</label>
+                  <label style={{ fontSize: '0.92rem', fontWeight: '600', color: '#102A43' }}>Work Email *</label>
                   <input 
                     type="text" 
                     name="email"
                     placeholder=""
                     value={formData.email}
                     onChange={handleChange}
+                    disabled={loading}
                     className={`demo-input-field ${errors.email ? 'error-border' : ''}`}
                   />
                   {errors.email && <span className="error-message">{errors.email}</span>}
@@ -258,13 +291,14 @@ const RequestDemo = () => {
 
                 {/* Field: Company Name */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  <label style={{ fontSize: '0.8rem', fontWeight: '600', color: '#102A43' }}>Company Name *</label>
+                  <label style={{ fontSize: '0.92rem', fontWeight: '600', color: '#102A43' }}>Company Name *</label>
                   <input 
                     type="text" 
                     name="companyName"
                     placeholder=""
                     value={formData.companyName}
                     onChange={handleChange}
+                    disabled={loading}
                     className={`demo-input-field ${errors.companyName ? 'error-border' : ''}`}
                   />
                   {errors.companyName && <span className="error-message">{errors.companyName}</span>}
@@ -272,35 +306,37 @@ const RequestDemo = () => {
 
                 {/* Field: Phone Number (Optional) */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  <label style={{ fontSize: '0.8rem', fontWeight: '600', color: '#102A43' }}>Phone Number (Optional)</label>
+                  <label style={{ fontSize: '0.92rem', fontWeight: '600', color: '#102A43' }}>Phone Number (Optional)</label>
                   <input 
                     type="text" 
                     name="phone"
                     placeholder=""
                     value={formData.phone}
                     onChange={handleChange}
+                    disabled={loading}
                     className="demo-input-field"
                   />
                 </div>
 
                 {/* Field: Message (Optional) */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  <label style={{ fontSize: '0.8rem', fontWeight: '600', color: '#102A43' }}>Message / What are you looking to explore?</label>
+                  <label style={{ fontSize: '0.92rem', fontWeight: '600', color: '#102A43' }}>Message / What are you looking to explore?</label>
                   <textarea 
                     name="message"
                     rows={4}
                     placeholder="Tell us about your team size, tasks, or coordination goals..."
                     value={formData.message}
                     onChange={handleChange}
+                    disabled={loading}
                     className="demo-input-field"
                     style={{ resize: 'vertical', minHeight: '80px' }}
                   />
                 </div>
 
                 {/* Submit button */}
-                <button type="submit" className="submit-btn">
-                  Request a Demo
-                  <ChevronRight size={16} />
+                <button type="submit" disabled={loading} className="submit-btn">
+                  {loading ? 'Submitting Request...' : 'Request a Demo'}
+                  {!loading && <ChevronRight size={18} />}
                 </button>
 
               </form>

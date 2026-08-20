@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { getEmployees } from '../services/api';
+import { getEmployees, getChatHistory } from '../services/api';
 import { Send, Hash, User, Paperclip, MessageSquare, File, X } from 'lucide-react';
 import io from 'socket.io-client';
 
 const Chat = () => {
   const { user } = useAuth();
   const [employees, setEmployees] = useState([]);
+  const [myEmpId, setMyEmpId] = useState('');
   const [activeTab, setActiveTab] = useState({ id: 'general', type: 'channel', name: '#general' });
   const [messageText, setMessageText] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
@@ -49,6 +50,8 @@ const Chat = () => {
   // Fetch employees list for Direct Messaging
   useEffect(() => {
     getEmployees().then(data => {
+      const self = data.find(e => e.email.toLowerCase() === user.email.toLowerCase());
+      if (self) setMyEmpId(self.id);
       // Exclude self from direct messages
       setEmployees(data.filter(e => e.email.toLowerCase() !== user.email.toLowerCase()));
     }).catch(console.error);
@@ -64,8 +67,6 @@ const Chat = () => {
 
     socketRef.current.on('connect', () => {
       setSocketConnected(true);
-      // Join active room
-      socketRef.current.emit('join', activeTab.id);
     });
 
     socketRef.current.on('disconnect', () => {
@@ -88,13 +89,33 @@ const Chat = () => {
     };
   }, []);
 
-  // Handle room joining on tab swap
+  const currentRoomId = activeTab.type === 'channel' 
+    ? activeTab.id 
+    : (myEmpId && activeTab.id ? `dm_${[myEmpId, activeTab.id].sort().join('_')}` : activeTab.id);
+
+  // Handle room joining and history loading on tab swap
   useEffect(() => {
-    if (socketRef.current && socketConnected) {
-      socketRef.current.emit('join', activeTab.id);
+    if (socketRef.current && socketConnected && currentRoomId) {
+      socketRef.current.emit('join', currentRoomId);
     }
+    
+    // Load persistent chat history from DB
+    const loadHistory = async () => {
+      if (!currentRoomId) return;
+      try {
+        const history = await getChatHistory(currentRoomId);
+        setMessages(prev => ({
+          ...prev,
+          [currentRoomId]: history
+        }));
+      } catch (err) {
+        console.error("Error loading chat history:", err);
+      }
+    };
+    
+    loadHistory();
     scrollToBottom();
-  }, [activeTab, socketConnected]);
+  }, [currentRoomId, socketConnected]);
 
   useEffect(() => {
     scrollToBottom();
@@ -114,7 +135,7 @@ const Chat = () => {
       senderName: user.name,
       text: messageText,
       time: timeString,
-      room: activeTab.id,
+      room: currentRoomId,
       file: selectedFile ? { name: selectedFile.name, type: selectedFile.type, data: selectedFile.data } : null
     };
 
@@ -125,7 +146,7 @@ const Chat = () => {
       // Offline fallback: simulate message locally
       setMessages(prev => ({
         ...prev,
-        [activeTab.id]: [...(prev[activeTab.id] || []), newMsg]
+        [currentRoomId]: [...(prev[currentRoomId] || []), newMsg]
       }));
       
       // Auto-reply mock if DMing someone to demonstrate it alive
@@ -136,11 +157,11 @@ const Chat = () => {
             senderName: activeTab.name,
             text: `Thanks for the message! I am currently working. Let's sync up later.`,
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            room: activeTab.id
+            room: currentRoomId
           };
           setMessages(prev => ({
             ...prev,
-            [activeTab.id]: [...(prev[activeTab.id] || []), reply]
+            [currentRoomId]: [...(prev[currentRoomId] || []), reply]
           }));
         }, 1500);
       }
@@ -157,7 +178,7 @@ const Chat = () => {
     { id: 'hr', name: '#hr' }
   ];
 
-  const activeMessages = messages[activeTab.id] || [];
+  const activeMessages = messages[currentRoomId] || [];
 
   return (
     <div style={{ display: 'flex', height: 'calc(100vh - 120px)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden', backgroundColor: 'var(--surface)' }}>

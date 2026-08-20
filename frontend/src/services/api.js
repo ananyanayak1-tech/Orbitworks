@@ -97,6 +97,16 @@ export const addTaskComment = async (taskId, comment) => {
   return res.data.task;
 };
 
+export const deleteTaskComment = async (taskId, commentId) => {
+  const res = await api.delete(`/tasks/${taskId}/comments/${commentId}`);
+  return res.data;
+};
+
+export const getChatHistory = async (room) => {
+  const res = await api.get(`/chat/${room}`);
+  return res.data;
+};
+
 // Attendance Methods
 export const getAttendance = async (date) => {
   const res = await api.get('/attendance', { params: { date } });
@@ -169,6 +179,12 @@ export const getNotifications = async (userId) => {
 
 export const markNotificationRead = async (id) => {
   const res = await api.put(`/misc/notifications/${id}/read`);
+  return res.data;
+};
+
+// Demo Requests Methods
+export const submitDemoRequest = async (data) => {
+  const res = await api.post('/misc/demo-requests', data);
   return res.data;
 };
 

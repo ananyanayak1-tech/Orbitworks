@@ -410,4 +410,422 @@ router.put('/notifications/:id/read', auth, async (req, res) => {
   }
 });
 
+const nodemailer = require('nodemailer');
+const crypto = require('crypto');
+
+// Helper to generate a secure verification token for each request
+const getDemoVerificationToken = (id) => {
+  return crypto
+    .createHmac('sha256', process.env.JWT_SECRET || 'orbitworks-demo-secret-key-2026')
+    .update(id.toString())
+    .digest('hex');
+};
+
+// HTML Template helper for response pages (Approved / Denied confirmation screen)
+const renderApprovalResponsePage = (title, message, isSuccess) => {
+  const themeColor = isSuccess ? '#10B981' : '#EF4444';
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${title}</title>
+        <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=Manrope:wght@800&display=swap" rel="stylesheet">
+        <style>
+          body {
+            background-color: #F4F7F5;
+            font-family: 'IBM Plex Sans', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+          }
+          .card {
+            background-color: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.06);
+            border: 1px solid rgba(0,0,0,0.04);
+            padding: 3rem 2.5rem;
+            max-width: 450px;
+            width: 100%;
+            text-align: center;
+            box-sizing: border-box;
+          }
+          h1 {
+            font-family: 'Manrope', sans-serif;
+            font-weight: 800;
+            color: #102A43;
+            margin-top: 0;
+            font-size: 1.75rem;
+            letter-spacing: -0.5px;
+          }
+          p {
+            color: #526579;
+            line-height: 1.5;
+            font-size: 0.95rem;
+            margin-bottom: 2rem;
+          }
+          .status-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background-color: ${isSuccess ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)'};
+            color: ${themeColor};
+            font-size: 2rem;
+            margin-bottom: 1.5rem;
+            font-weight: bold;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="status-icon">${isSuccess ? '✓' : '✗'}</div>
+          <h1>${title}</h1>
+          <p>${message}</p>
+          <span style="font-size: 0.8rem; color: #9FB3C8; display: block; margin-top: 1.5rem;">OrbitWorks Coordination Engine</span>
+        </div>
+      </body>
+    </html>
+  `;
+};
+
+// @route   POST /api/misc/demo-requests
+// @desc    Submit a new demo request (Public)
+// @access  Public
+router.post('/demo-requests', async (req, res) => {
+  const { firstName, lastName, email, companyName, phone, message } = req.body;
+
+  if (!firstName || !lastName || !email || !companyName) {
+    return res.status(400).json({ message: "Required fields are missing" });
+  }
+
+  try {
+    const db = getDb();
+    const newRequest = {
+      firstName,
+      lastName,
+      email,
+      companyName,
+      phone: phone || '',
+      message: message || '',
+      status: 'pending', // 'pending', 'approved', 'rejected'
+      createdAt: new Date().toISOString()
+    };
+
+    const result = await db.collection('demo_requests').insertOne(newRequest);
+    const requestId = result.insertedId;
+    newRequest._id = requestId;
+
+    // Secure Verification Token
+    const secureToken = getDemoVerificationToken(requestId);
+
+    const smtpHost = process.env.SMTP_HOST;
+    const smtpPort = process.env.SMTP_PORT;
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+    const adminEmail = process.env.ADMIN_EMAIL || 'ceo@orbitworks.com';
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:5000';
+
+    if (smtpHost && smtpUser && smtpPass) {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: parseInt(smtpPort) || 587,
+        secure: smtpPort == 465,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass
+        }
+      });
+
+      // Actions inside the email pointing to backend approval endpoints
+      const approveLink = `${backendUrl}/api/misc/demo-requests/approve/${requestId}?token=${secureToken}`;
+      const rejectLink = `${backendUrl}/api/misc/demo-requests/reject/${requestId}?token=${secureToken}`;
+
+      const mailOptions = {
+        from: `"OrbitWorks Demo Alerts" <${smtpUser}>`,
+        to: adminEmail,
+        subject: `New Demo Access Request: ${companyName}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e8ed; border-radius: 12px; background-color: #ffffff;">
+            <h2 style="color: #102A43; margin-top: 0;">New Demo Access Request</h2>
+            <p style="color: #4a5568; line-height: 1.5;">You received a request for a custom demo walk from <strong>${companyName}</strong>.</p>
+            
+            <div style="background-color: #f7fafc; padding: 15px; border-radius: 8px; margin: 20px 0;">
+              <table style="width: 100%; font-size: 14px;">
+                <tr>
+                  <td style="color: #718096; width: 120px; padding: 4px 0;"><strong>Name:</strong></td>
+                  <td style="color: #2d3748;">${firstName} ${lastName}</td>
+                </tr>
+                <tr>
+                  <td style="color: #718096; padding: 4px 0;"><strong>Email:</strong></td>
+                  <td style="color: #2d3748;">${email}</td>
+                </tr>
+                <tr>
+                  <td style="color: #718096; padding: 4px 0;"><strong>Company:</strong></td>
+                  <td style="color: #2d3748;">${companyName}</td>
+                </tr>
+                <tr>
+                  <td style="color: #718096; padding: 4px 0;"><strong>Phone:</strong></td>
+                  <td style="color: #2d3748;">${phone || 'Not provided'}</td>
+                </tr>
+                <tr>
+                  <td style="color: #718096; vertical-align: top; padding: 4px 0;"><strong>Message:</strong></td>
+                  <td style="color: #2d3748; line-height: 1.4;">${message || 'No message provided.'}</td>
+                </tr>
+              </table>
+            </div>
+
+            <p style="color: #4a5568; margin-bottom: 25px;">Please review the client request details and decide whether to approve access to the OrbitWorks workspace demo:</p>
+            <table style="width: 100%; border-collapse: collapse; margin: 25px 0;">
+              <tr>
+                <td style="width: 48%; padding-right: 12px;">
+                  <a href="${approveLink}" style="display: block; background-color: #10B981; color: #ffffff; padding: 12px 18px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 14px; text-align: center; box-sizing: border-box;">
+                    Approve Access
+                  </a>
+                </td>
+                <td style="width: 48%; padding-left: 12px;">
+                  <a href="${rejectLink}" style="display: block; background-color: #EF4444; color: #ffffff; padding: 12px 18px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 14px; text-align: center; box-sizing: border-box;">
+                    Deny Access
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 30px 0;" />
+            <span style="color: #a0aec0; font-size: 12px; display: block; text-align: center;">OrbitWorks Integration Engine · Automated Notifications</span>
+          </div>
+        `
+      };
+
+      transporter.sendMail(mailOptions, (err, info) => {
+        if (err) {
+          console.error("Nodemailer mail sending error:", err);
+        } else {
+          console.log("Nodemailer mail sent successfully:", info.response);
+        }
+      });
+    } else {
+      console.log("SMTP environment credentials not found. Skipping email alerts.");
+    }
+
+    res.status(201).json({ message: "Demo request submitted successfully", request: newRequest });
+  } catch (err) {
+    console.error("Submit demo request error:", err);
+    res.status(500).json({ message: "Server error submitting demo request" });
+  }
+});
+
+// @route   GET /api/misc/demo-requests/approve/:id
+// @desc    Approve access trigger via email (Public url with secure token check)
+// @access  Public (Verification-driven)
+router.get('/demo-requests/approve/:id', async (req, res) => {
+  const requestId = req.params.id;
+  const { token } = req.query;
+
+  if (!ObjectId.isValid(requestId)) {
+    return res.status(400).send(renderApprovalResponsePage('Invalid Request', 'The request ID format is invalid.', false));
+  }
+
+  // Validate Token Integrity
+  const expectedToken = getDemoVerificationToken(requestId);
+  if (token !== expectedToken) {
+    return res.status(403).send(renderApprovalResponsePage('Access Forbidden', 'The verification token is invalid or expired.', false));
+  }
+
+  try {
+    const db = getDb();
+    const existing = await db.collection('demo_requests').findOne({ _id: new ObjectId(requestId) });
+    if (!existing) {
+      return res.status(404).send(renderApprovalResponsePage('Request Not Found', 'The demo request could not be located.', false));
+    }
+
+    // State Locking Checks
+    if (existing.status === 'approved') {
+      return res.send(renderApprovalResponsePage(
+        'Already Approved', 
+        `The demo request from <strong>${existing.firstName} ${existing.lastName} (${existing.companyName})</strong> has already been approved previously.`, 
+        true
+      ));
+    }
+    if (existing.status === 'rejected') {
+      return res.send(renderApprovalResponsePage(
+        'Action Blocked', 
+        `This request has already been declined and cannot be approved.`, 
+        false
+      ));
+    }
+
+    // Set Approved status
+    await db.collection('demo_requests').updateOne(
+      { _id: new ObjectId(requestId) },
+      { $set: { status: 'approved' } }
+    );
+
+    // Conceptually, send confirmation email back to the prospect
+    const smtpHost = process.env.SMTP_HOST;
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+
+    if (smtpHost && smtpUser && smtpPass) {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: parseInt(process.env.SMTP_PORT) || 587,
+        secure: process.env.SMTP_PORT == 465,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass
+        }
+      });
+      const googleMeetLink = process.env.GOOGLE_MEET_LINK || 'https://meet.google.com/new';
+
+      const clientMailOptions = {
+        from: `"OrbitWorks Support" <${smtpUser}>`,
+        to: existing.email,
+        subject: `OrbitWorks Demo Approved! Let's schedule a call`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e8ed; border-radius: 12px; background-color: #ffffff;">
+            <h2 style="color: #102A43; margin-top: 0;">Demo Request Approved!</h2>
+            <p style="color: #2d3748; font-size: 15px; line-height: 1.6;">Hi ${existing.firstName},</p>
+            <p style="color: #4a5568; font-size: 15px; line-height: 1.6;">We are excited to let you know that your demo request for <strong>OrbitWorks</strong> has been approved!</p>
+            
+            <p style="color: #4a5568; font-size: 15px; line-height: 1.6;">Instead of just sending standard sandbox credentials, we would love to invite you to a personalized, 1-on-1 walkthrough via <strong>Google Meet</strong>. This allows us to tailor the demo to your specific team workflows, show you custom features, and answer any integration questions you have.</p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${googleMeetLink}" target="_blank" style="display: inline-block; background-color: #087E8B; color: #ffffff; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px; box-shadow: 0 4px 12px rgba(8, 126, 139, 0.2); vertical-align: middle;">
+                <span style="vertical-align: middle;">Schedule Live Demo Walk (Google Meet)</span>
+                <img src="https://img.icons8.com/material-outlined/24/ffffff/calendar--v1.png" width="16" height="16" style="vertical-align: middle; margin-left: 8px; display: inline-block;" alt="Calendar" />
+              </a>
+            </div>
+
+            <p style="color: #4a5568; font-size: 14px; line-height: 1.6;">If you have a preferred scheduler link (like Calendly) or specific time slots that work best for you, please reply directly to this email.</p>
+            
+            <p style="color: #2d3748; font-size: 15px; font-weight: bold; margin-top: 25px; margin-bottom: 5px;">Best regards,</p>
+            <p style="color: #4a5568; font-size: 15px; margin: 0; font-weight: 600;">Team OrbitWorks</p>
+            
+            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 30px 0;" />
+            <span style="color: #a0aec0; font-size: 12px; display: block; text-align: center;">OrbitWorks Coordination Suite · Personalised Walkthroughs</span>
+          </div>
+        `
+      };
+
+      transporter.sendMail(clientMailOptions, (err) => {
+        if (err) console.error("Client approve email dispatch failed:", err);
+      });
+    }
+
+    res.send(renderApprovalResponsePage(
+      'Demo Access Approved', 
+      `The demo request from <strong>${existing.firstName} ${existing.lastName} (${existing.companyName})</strong> has been successfully approved. An automated welcome email inviting them to a live Google Meet walk has been sent to <strong>${existing.email}</strong>.`,
+      true
+    ));
+  } catch (err) {
+    console.error("Approve error:", err);
+    res.status(500).send(renderApprovalResponsePage('Server Error', 'An unexpected error occurred during database update.', false));
+  }
+});
+
+// @route   GET /api/misc/demo-requests/reject/:id
+// @desc    Reject access trigger via email (Public url with secure token check)
+// @access  Public (Verification-driven)
+router.get('/demo-requests/reject/:id', async (req, res) => {
+  const requestId = req.params.id;
+  const { token } = req.query;
+
+  if (!ObjectId.isValid(requestId)) {
+    return res.status(400).send(renderApprovalResponsePage('Invalid Request', 'The request ID format is invalid.', false));
+  }
+
+  // Validate Token Integrity
+  const expectedToken = getDemoVerificationToken(requestId);
+  if (token !== expectedToken) {
+    return res.status(403).send(renderApprovalResponsePage('Access Forbidden', 'The verification token is invalid or expired.', false));
+  }
+
+  try {
+    const db = getDb();
+    const existing = await db.collection('demo_requests').findOne({ _id: new ObjectId(requestId) });
+    if (!existing) {
+      return res.status(404).send(renderApprovalResponsePage('Request Not Found', 'The demo request could not be located.', false));
+    }
+
+    // State Locking Checks
+    if (existing.status === 'approved') {
+      return res.send(renderApprovalResponsePage(
+        'Action Blocked', 
+        `This request has already been approved and cannot be declined.`, 
+        false
+      ));
+    }
+    if (existing.status === 'rejected') {
+      return res.send(renderApprovalResponsePage(
+        'Already Declined', 
+        `The demo request from <strong>${existing.firstName} ${existing.lastName} (${existing.companyName})</strong> has already been declined previously.`, 
+        false
+      ));
+    }
+
+    // Set Rejected status
+    await db.collection('demo_requests').updateOne(
+      { _id: new ObjectId(requestId) },
+      { $set: { status: 'rejected' } }
+    );
+
+    // Send polite rejection email to the client
+    const smtpHost = process.env.SMTP_HOST;
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+
+    if (smtpHost && smtpUser && smtpPass) {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: parseInt(process.env.SMTP_PORT) || 587,
+        secure: process.env.SMTP_PORT == 465,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass
+        }
+      });
+
+      const clientMailOptions = {
+        from: `"OrbitWorks Support" <${smtpUser}>`,
+        to: existing.email,
+        subject: `OrbitWorks Demo Request Update`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e8ed; border-radius: 12px; background-color: #ffffff;">
+            <h2 style="color: #102A43; margin-top: 0;">Demo Request Update</h2>
+            <p style="color: #2d3748; font-size: 15px; line-height: 1.6;">Hi ${existing.firstName},</p>
+            <p style="color: #4a5568; font-size: 15px; line-height: 1.6;">Thank you for your interest in <strong>OrbitWorks</strong>. We appreciate you taking the time to submit a request for a live demo walk.</p>
+            
+            <p style="color: #4a5568; font-size: 15px; line-height: 1.6;">Unfortunately, we are unable to accommodate your request for a tailored demo walkthrough at this time due to high request volumes and limited availability slots.</p>
+            
+            <p style="color: #4a5568; font-size: 15px; line-height: 1.6;">We will retain your details and contact you if slot schedules open up in the future.</p>
+            
+            <p style="color: #2d3748; font-size: 15px; font-weight: bold; margin-top: 25px; margin-bottom: 5px;">Best regards,</p>
+            <p style="color: #4a5568; font-size: 15px; margin: 0; font-weight: 600;">Team OrbitWorks</p>
+            
+            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 30px 0;" />
+            <span style="color: #a0aec0; font-size: 12px; display: block; text-align: center;">OrbitWorks Coordination Suite · Support Operations</span>
+          </div>
+        `
+      };
+
+      transporter.sendMail(clientMailOptions, (err) => {
+        if (err) console.error("Client reject email dispatch failed:", err);
+      });
+    }
+
+    res.send(renderApprovalResponsePage(
+      'Demo Request Denied', 
+      `The demo request from <strong>${existing.firstName} ${existing.lastName} (${existing.companyName})</strong> has been declined. A polite notification email has been sent to <strong>${existing.email}</strong>.`,
+      false
+    ));
+  } catch (err) {
+    console.error("Reject error:", err);
+    res.status(500).send(renderApprovalResponsePage('Server Error', 'An unexpected error occurred during database update.', false));
+  }
+});
+
 module.exports = router;

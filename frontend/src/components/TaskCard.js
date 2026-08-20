@@ -10,18 +10,27 @@ const TaskCard = ({ task, onClick }) => {
       onClick={onClick}
       style={{ 
         cursor: 'pointer', 
-        padding: '1rem', 
+        padding: '1.15rem', 
         display: 'flex', 
         flexDirection: 'column', 
         gap: '0.75rem',
-        border: '1px solid var(--border)',
-        borderRadius: '12px',
+        border: '1.5px solid var(--card-border)',
+        borderRadius: '16px',
         backgroundColor: 'var(--surface)',
-        transition: 'border-color 0.2s ease',
+        boxShadow: 'var(--card-shadow)',
+        transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
         userSelect: 'none'
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}
+      onMouseEnter={(e) => { 
+        e.currentTarget.style.borderColor = 'rgba(137, 225, 247, 0.6)'; 
+        e.currentTarget.style.transform = 'translateY(-2px)';
+        e.currentTarget.style.boxShadow = 'var(--card-shadow-hover)';
+      }}
+      onMouseLeave={(e) => { 
+        e.currentTarget.style.borderColor = 'var(--card-border)'; 
+        e.currentTarget.style.transform = 'none';
+        e.currentTarget.style.boxShadow = 'var(--card-shadow)';
+      }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Badge text={task.priority} />
@@ -65,7 +74,7 @@ const TaskCard = ({ task, onClick }) => {
           justifyContent: 'space-between', 
           alignItems: 'center', 
           marginTop: '0.5rem', 
-          borderTop: '1px solid var(--border)', 
+          borderTop: '1px solid var(--card-border)', 
           paddingTop: '0.5rem' 
         }}
       >

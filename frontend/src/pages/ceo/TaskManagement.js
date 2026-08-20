@@ -3,15 +3,29 @@ import KanbanBoard from '../../components/KanbanBoard';
 import Modal from '../../components/Modal';
 import Badge from '../../components/Badge';
 import DiscussionThread from '../../components/DiscussionThread';
-import { createTask, updateTask, addTaskComment } from '../../services/api';
+import { createTask, updateTask, addTaskComment, deleteTaskComment } from '../../services/api';
 import { Plus, Calendar } from 'lucide-react';
 import { formatDate } from '../../utils/dateFormatter';
 import { useToast } from '../../context/ToastContext';
+
+const getTaskCode = (task) => {
+  if (!task) return '';
+  if (task.taskCode) return task.taskCode;
+  const idStr = String(task._id || task.id || '');
+  if (idStr.endsWith('9c')) return 'TSK-101';
+  if (idStr.endsWith('9d')) return 'TSK-102';
+  if (idStr.endsWith('9e')) return 'TSK-103';
+  if (idStr.length > 5) {
+    return `TSK-${idStr.slice(-5).toUpperCase()}`;
+  }
+  return 'TSK-100';
+};
 
 const TaskManagement = ({ tasks, employees, projects, onRefresh }) => {
   const { showToast } = useToast();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
+  const [tempStatus, setTempStatus] = useState('');
 
   // Form fields for creation
   const [title, setTitle] = useState('');
@@ -62,24 +76,43 @@ const TaskManagement = ({ tasks, employees, projects, onRefresh }) => {
 
   const handleTaskClick = (task) => {
     setSelectedTask(task);
+    setTempStatus(task.status || 'not started');
   };
 
-  const handleAddComment = async (text) => {
+  const handlePost = async (text) => {
+    const hasStatusChanged = tempStatus && tempStatus !== selectedTask.status;
+    const hasComment = text && text.trim() !== '';
+    if (!hasStatusChanged && !hasComment) return;
+
     try {
-      const updated = await addTaskComment(selectedTask.id, {
-        senderName: 'john doe', // Mock CEO name
-        text
-      });
-      setSelectedTask(updated);
+      let updatedTaskObj = selectedTask;
+      const taskId = selectedTask._id || selectedTask.id;
+      
+      // 1. If status has changed, update status in DB
+      if (hasStatusChanged) {
+        updatedTaskObj = await updateTask(taskId, { status: tempStatus });
+      }
+      
+      // 2. If there is a comment text, add comment
+      if (hasComment) {
+        updatedTaskObj = await addTaskComment(taskId, {
+          senderName: 'john doe', // Mock CEO name
+          text: text.trim()
+        });
+      }
+      
+      setSelectedTask(null);
       onRefresh();
+      showToast('Task details updated successfully!');
     } catch (err) {
+      showToast('Failed to save update.', 'error');
       console.error(err);
     }
   };
 
-  const handleStatusChange = async (status) => {
+  const handleDeleteComment = async (commentId) => {
     try {
-      const updated = await updateTask(selectedTask.id, { status });
+      const updated = await deleteTaskComment(selectedTask._id || selectedTask.id, commentId);
       setSelectedTask(updated);
       onRefresh();
     } catch (err) {
@@ -119,7 +152,7 @@ const TaskManagement = ({ tasks, employees, projects, onRefresh }) => {
         {selectedTask && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.15rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>ID: {selectedTask.id}</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Task ID: {getTaskCode(selectedTask)}</span>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <Badge text={selectedTask.priority} />
                 <Badge text={selectedTask.status} />
@@ -144,7 +177,7 @@ const TaskManagement = ({ tasks, employees, projects, onRefresh }) => {
                 <strong style={{ fontWeight: '600' }}>Timeline:</strong>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem', color: 'var(--text-secondary)' }}>
                   <Calendar size={14} />
-                  <span>{formatDate(selectedTask.startDate)} / {formatDate(selectedTask.deadline)}</span>
+                  <span>{formatDate(selectedTask.startDate || selectedTask.createdAt)} / {formatDate(selectedTask.deadline || selectedTask.dueDate)}</span>
                 </div>
               </div>
               <div>
@@ -164,8 +197,8 @@ const TaskManagement = ({ tasks, employees, projects, onRefresh }) => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <strong style={{ fontWeight: '600', fontSize: '0.85rem' }}>Status Update:</strong>
               <select 
-                value={selectedTask.status} 
-                onChange={(e) => handleStatusChange(e.target.value)}
+                value={tempStatus} 
+                onChange={(e) => setTempStatus(e.target.value)}
                 style={{ fontSize: '0.85rem', padding: '0.4rem 0.8rem' }}
               >
                 <option value="not started">Not Started</option>
@@ -176,7 +209,11 @@ const TaskManagement = ({ tasks, employees, projects, onRefresh }) => {
               </select>
             </div>
 
-            <DiscussionThread comments={selectedTask.comments} onAddComment={handleAddComment} />
+            <DiscussionThread 
+              comments={selectedTask.comments} 
+              onAddComment={handlePost} 
+              onDeleteComment={handleDeleteComment} 
+            />
           </div>
         )}
       </Modal>
@@ -185,27 +222,47 @@ const TaskManagement = ({ tasks, employees, projects, onRefresh }) => {
       <Modal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} title="Assign New Task">
         <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '1.15rem' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-            <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Task Title</label>
-            <input type="text" required value={title} onChange={(e) => setTitle(e.target.value)} />
+            <label style={{ fontSize: '0.95rem', fontWeight: '600' }}>Task Title</label>
+            <input 
+              type="text" 
+              required 
+              value={title} 
+              onChange={(e) => setTitle(e.target.value)} 
+              style={{ fontSize: '0.95rem' }}
+            />
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-            <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Description</label>
-            <textarea rows={3} required value={description} onChange={(e) => setDescription(e.target.value)} />
+            <label style={{ fontSize: '0.95rem', fontWeight: '600' }}>Description</label>
+            <textarea 
+              rows={3} 
+              required 
+              value={description} 
+              onChange={(e) => setDescription(e.target.value)} 
+              style={{ fontSize: '0.95rem', fontFamily: 'inherit' }}
+            />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Project</label>
-              <select value={projectName} onChange={(e) => setProjectName(e.target.value)}>
+              <label style={{ fontSize: '0.95rem', fontWeight: '600' }}>Project</label>
+              <select 
+                value={projectName} 
+                onChange={(e) => setProjectName(e.target.value)}
+                style={{ fontSize: '0.95rem' }}
+              >
                 {projects.map(p => (
                   <option key={p.id} value={p.name}>{p.name}</option>
                 ))}
               </select>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Priority</label>
-              <select value={priority} onChange={(e) => setPriority(e.target.value)}>
+              <label style={{ fontSize: '0.95rem', fontWeight: '600' }}>Priority</label>
+              <select 
+                value={priority} 
+                onChange={(e) => setPriority(e.target.value)}
+                style={{ fontSize: '0.95rem' }}
+              >
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
@@ -216,17 +273,29 @@ const TaskManagement = ({ tasks, employees, projects, onRefresh }) => {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Start Date</label>
-              <input type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <label style={{ fontSize: '0.95rem', fontWeight: '600' }}>Start Date</label>
+              <input 
+                type="date" 
+                required 
+                value={startDate} 
+                onChange={(e) => setStartDate(e.target.value)} 
+                style={{ fontSize: '0.95rem' }}
+              />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Deadline</label>
-              <input type="date" required value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+              <label style={{ fontSize: '0.95rem', fontWeight: '600' }}>Deadline</label>
+              <input 
+                type="date" 
+                required 
+                value={deadline} 
+                onChange={(e) => setDeadline(e.target.value)} 
+                style={{ fontSize: '0.95rem' }}
+              />
             </div>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-            <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Assign To Employees (Hold Ctrl to select multiple)</label>
+            <label style={{ fontSize: '0.95rem', fontWeight: '600' }}>Assign To Employees (Hold Ctrl to select multiple)</label>
             <select 
               multiple 
               required
@@ -235,7 +304,7 @@ const TaskManagement = ({ tasks, employees, projects, onRefresh }) => {
                 const options = [...e.target.selectedOptions];
                 setAssignedTo(options.map(opt => opt.value));
               }}
-              style={{ minHeight: '100px' }}
+              style={{ minHeight: '120px', borderRadius: '8px', border: '1.5px solid var(--card-border)', fontSize: '0.95rem' }}
             >
               {employees.map(emp => (
                 <option key={emp.id} value={emp.id}>{emp.name} ({emp.designation})</option>
@@ -244,13 +313,19 @@ const TaskManagement = ({ tasks, employees, projects, onRefresh }) => {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-            <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Expected Outcome</label>
-            <input type="text" placeholder="e.g. Documentation, files, tests passed" value={expectedOutcome} onChange={(e) => setExpectedOutcome(e.target.value)} />
+            <label style={{ fontSize: '0.95rem', fontWeight: '600' }}>Expected Outcome</label>
+            <input 
+              type="text" 
+              placeholder="e.g. Documentation, files, tests passed" 
+              value={expectedOutcome} 
+              onChange={(e) => setExpectedOutcome(e.target.value)} 
+              style={{ fontSize: '0.95rem' }}
+            />
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
-            <button type="button" className="secondary" onClick={() => setIsCreateModalOpen(false)}>Cancel</button>
-            <button type="submit" className="primary">Assign</button>
+            <button type="button" className="secondary" onClick={() => setIsCreateModalOpen(false)} style={{ fontSize: '0.95rem' }}>Cancel</button>
+            <button type="submit" className="primary" style={{ fontSize: '0.95rem', minWidth: '100px' }}>Assign</button>
           </div>
         </form>
       </Modal>

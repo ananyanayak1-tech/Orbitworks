@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import Avatar from './Avatar';
+import { Trash2 } from 'lucide-react';
 
-const DiscussionThread = ({ comments = [], onAddComment }) => {
+const DiscussionThread = ({ comments = [], onAddComment, onDeleteComment }) => {
   const [text, setText] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!text.trim()) return;
     onAddComment(text);
     setText('');
   };
@@ -28,8 +28,8 @@ const DiscussionThread = ({ comments = [], onAddComment }) => {
       >
         {comments.length > 0 ? (
           comments.map((comment) => (
-            <div key={comment.id} style={{ display: 'flex', gap: '0.75rem' }}>
-              <Avatar name={comment.senderName} size={32} />
+            <div key={comment.id || comment._id} style={{ display: 'flex', gap: '0.75rem' }}>
+              <Avatar name={comment.senderName || comment.userName} size={32} />
               <div 
                 style={{ 
                   flex: 1, 
@@ -39,13 +39,40 @@ const DiscussionThread = ({ comments = [], onAddComment }) => {
                   border: '1px solid var(--border)' 
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                  <span style={{ fontWeight: '600', fontSize: '0.85rem', textTransform: 'lowercase' }}>
-                    {comment.senderName}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                  <span style={{ fontWeight: '600', fontSize: '0.85rem' }}>
+                    {comment.senderName || comment.userName}
                   </span>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                    {new Date(comment.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                      {(() => {
+                        const d = new Date(comment.time || comment.timestamp);
+                        if (isNaN(d.getTime())) return 'Invalid Date';
+                        return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} at ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                      })()}
+                    </span>
+                    {onDeleteComment && (
+                      <button 
+                        onClick={() => onDeleteComment(comment.id || comment._id)}
+                        style={{ 
+                          background: 'none', 
+                          border: 'none', 
+                          color: 'var(--text-secondary)', 
+                          cursor: 'pointer', 
+                          padding: '0.2rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'color 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.color = '#ff4d4f'}
+                        onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
+                        title="Delete Comment"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <p 
                   style={{ 
